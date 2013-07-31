@@ -8,8 +8,8 @@ Gem::Specification.new do |spec|
   spec.version       = Auth::Middleware::VERSION
   spec.authors       = ["Thorben Schröder"]
   spec.email         = ["stillepost@gmail.com"]
-  spec.description   = %q{Middleware to easily add QS ID authentifaction to web apps}
-  spec.summary       = %q{Middleware to easily add QS ID authentifaction to web apps}
+  spec.description   = %q{Allow any app to be protected behind a login-wall using QS ID}
+  spec.summary       = %q{Allow any app to be protected behind a login-wall using QS ID}
   spec.homepage      = ""
   spec.license       = "MIT"
 
@@ -21,6 +21,7 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency "bundler", "~> 1.3"
   spec.add_development_dependency "rake"
   spec.add_development_dependency "rack-client"
+  spec.add_development_dependency 'qs-test-harness', '>= 0.0.1'
 
   spec.add_dependency 'rack', '>= 1.4.5'
   spec.add_dependency 'omniauth'

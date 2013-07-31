@@ -6,6 +6,7 @@ Bundler.require
 require 'minitest/autorun'
 
 require 'auth/middleware'
+require 'qs-test-harness'
 
 class MiddlewareInjector
   def initialize(app)
