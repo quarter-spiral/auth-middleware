@@ -1,29 +1,41 @@
 # Auth::Middleware
 
-TODO: Write a gem description
-
-## Installation
-
-Add this line to your application's Gemfile:
-
-    gem 'auth-middleware'
-
-And then execute:
-
-    $ bundle
-
-Or install it yourself as:
-
-    $ gem install auth-middleware
+Allow any app to be protected behind a login-wall using QS ID
 
 ## Usage
 
-TODO: Write usage instructions here
+The middleware is a standard Rack middleware use it as such.
 
-## Contributing
+This makes the app only accesible when logged in:
 
-1. Fork it
-2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am 'Add some feature'`)
-4. Push to the branch (`git push origin my-new-feature`)
-5. Create new Pull Request
+```ruby
+# config.ru
+
+require 'auth/middleware'
+
+authed_app = Rack::Builder.new do
+  use Auth::Middleware, 'my-qs-app-id', 'my-qs-app-secret', 'qs_auth_cookie_name' do |auth_tools|
+    auth_tools.require_login!
+  end
+  run MyOriginalApp
+end
+
+run authed_app
+```
+
+You can also allow only admins to access your app:
+
+```ruby
+# config.ru
+
+require 'auth/middleware'
+
+authed_app = Rack::Builder.new do
+  use Auth::Middleware, 'my-qs-app-id', 'my-qs-app-secret', 'qs_auth_cookie_name' do |auth_tools|
+    auth_tools.require_admin!
+  end
+  run MyOriginalApp
+end
+
+run authed_app
+```
