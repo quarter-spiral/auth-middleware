@@ -9,17 +9,15 @@ describe Auth::Middleware do
     @client = @harness.client
   end
 
-  it "redirects to login when not logged in" do
-    user = @harness.entity_factory.create(:user)
+  def handle_oauth_procedure(initial_response, user)
     cookie = user.logged_in_cookie
 
-    response = @client.get 'http://example.com/'
-    response.status.must_equal 302
-    response.body.must_be_empty
+    app_cookie = initial_response.headers['Set-Cookie']
 
-    response = @client.get response.headers['Location']
+    response = @client.get initial_response.headers['Location'], headers: {'Referer' => "http://example.com/afterloginthing", 'Cookie' => app_cookie}
     response.status.must_equal 302
     response.headers['Location'].must_match /\/oauth\/authorize/
+    app_cookie = response.headers['Set-Cookie']
 
     url = response.headers['Location']
     state = url.match(/(&|\?)state=(.*)(&.*)?$/).captures[1]
@@ -27,12 +25,11 @@ describe Auth::Middleware do
     state.wont_be_empty
 
     auth_client = @harness.provider(:auth).client
-    response = auth_client.get url, headers: {'Cookie' => cookie}
+    response = auth_client.get url, headers: {'Cookie' => cookie, 'Referer' => 'http://example.com/'}
     response.status.must_equal 200
     response.body.index('"/oauth/allow"').wont_be_nil
     response.body.index(state).wont_be_nil
     cookie = response.headers['Set-Cookie']
-
 
     params = {
       response_type: 'code',
@@ -44,7 +41,70 @@ describe Auth::Middleware do
     body = URI.encode_www_form(params)
     response = auth_client.post "/oauth/allow", headers: {'Cookie' => cookie}, body: body
     response.status.must_equal 302
-    response.headers['Location'].index('http://example.com/auth/auth_backend/callback').wont_be_nil
-    response.headers['Location'].must_match /(&|\?)code=[^&]+(&.*)?$/
+
+    response = @client.get response.headers['Location'], headers: {'Cookie' => app_cookie}
+    response.status.must_equal 301
+    response.headers['Location'].must_equal "http://example.com/afterloginthing"
+    app_cookie = response.headers['Set-Cookie']
+
+    @client.get response.headers['Location'], headers: {'Cookie' => app_cookie}
+  end
+
+  describe "login required" do
+    before do
+      MiddlewareInjector.reset!
+      MiddlewareInjector.use Auth::Middleware, MIDDLEWARE_OAUTH_APP.id, MIDDLEWARE_OAUTH_APP.secret, 'qs_auth_middleware_test' do |auth_tools|
+        auth_tools.require_login!
+      end
+    end
+
+    it "shows you the secret page after login" do
+      response = @client.get 'http://example.com/'
+      response.status.must_equal 302
+      response.body.must_be_empty
+
+      user = @harness.entity_factory.create(:user)
+      response = handle_oauth_procedure(response, user)
+
+      response.status.must_equal 200
+      response.body.must_equal "Secret - #{user.uuid}"
+    end
+  end
+
+  describe "admin privileges required" do
+    before do
+      MiddlewareInjector.reset!
+      MiddlewareInjector.use Auth::Middleware, MIDDLEWARE_OAUTH_APP.id, MIDDLEWARE_OAUTH_APP.secret, 'qs_auth_middleware_test' do |auth_tools|
+        auth_tools.require_admin!
+      end
+    end
+
+    it "redirects you back to login when logged in but not as an admin" do
+      response = @client.get 'http://example.com/'
+      response.status.must_equal 302
+      response.body.must_be_empty
+
+      user = @harness.entity_factory.create(:user, :admin => false)
+      response = handle_oauth_procedure(response, user)
+
+      response.status.must_equal 200
+      response.body.must_equal "No access without admin privileges."
+      cookie = response['Set-Cookie']
+
+      response = @client.get 'http://example.com/', headers: {'Cookie' => cookie}
+      response.status.must_equal 200
+      response.body.must_equal "No access without admin privileges."
+    end
+
+    it "shows you the secret page when logged in as an admin" do
+      response = @client.get 'http://example.com/'
+      response.status.must_equal 302
+      response.body.must_be_empty
+
+      user = @harness.entity_factory.create(:user, :admin => true)
+      response = handle_oauth_procedure(response, user)
+      response.status.must_equal 200
+      response.body.must_equal "Secret - #{user.uuid}"
+    end
   end
 end
