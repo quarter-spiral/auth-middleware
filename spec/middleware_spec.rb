@@ -2,6 +2,7 @@ require_relative './spec_helper'
 
 require 'rack/client'
 require 'uri'
+require 'cgi'
 
 describe Auth::Middleware do
   before do
@@ -47,7 +48,7 @@ describe Auth::Middleware do
     response.headers['Location'].must_equal "http://example.com/afterloginthing"
     app_cookie = response.headers['Set-Cookie']
 
-    @client.get response.headers['Location'], headers: {'Cookie' => app_cookie}
+    [app_cookie, @client.get(response.headers['Location'], headers: {'Cookie' => app_cookie})]
   end
 
   describe "login required" do
@@ -64,10 +65,34 @@ describe Auth::Middleware do
       response.body.must_be_empty
 
       user = @harness.entity_factory.create(:user)
-      response = handle_oauth_procedure(response, user)
+      cookie, response = handle_oauth_procedure(response, user)
 
       response.status.must_equal 200
       response.body.must_equal "Secret - #{user.uuid}"
+    end
+
+    it "has a logout endpoint" do
+      response = @client.get 'http://example.com/'
+      user = @harness.entity_factory.create(:user)
+      cookie, response = handle_oauth_procedure(response, user)
+      response.status.must_equal 200
+      response.body.must_equal "Secret - #{user.uuid}"
+
+      response = @client.get 'http://example.com/', headers: {'Cookie' => cookie}
+      response.status.must_equal 200
+      response.body.must_equal "Secret - #{user.uuid}"
+
+      response = @client.get 'http://example.com/auth/auth_backend/logout', headers: {'Cookie' => cookie}
+      response.status.must_equal 302
+      response.headers['Location'].must_equal "#{ENV['QS_AUTH_BACKEND_URL']}/signout?redirect_uri=#{CGI.escape('http://example.com/')}"
+
+      cookie_expiration = response.headers['Set-Cookie'].match(/expires=(.*)(;.*)?$/i).captures.first
+      date, time, junk = cookie_expiration.split(', ').last.split(' ')
+      day, month, year = date.split('-')
+      hour, minute, second = time.split(':')
+      cookie_expiration = Time.new(year, month, day, hour.to_i, minute.to_i, second.to_i)
+
+      cookie_expiration < Time.now
     end
   end
 
@@ -85,11 +110,10 @@ describe Auth::Middleware do
       response.body.must_be_empty
 
       user = @harness.entity_factory.create(:user, :admin => false)
-      response = handle_oauth_procedure(response, user)
+      cookie, response = handle_oauth_procedure(response, user)
 
       response.status.must_equal 200
       response.body.must_equal "No access without admin privileges."
-      cookie = response['Set-Cookie']
 
       response = @client.get 'http://example.com/', headers: {'Cookie' => cookie}
       response.status.must_equal 200
@@ -102,7 +126,7 @@ describe Auth::Middleware do
       response.body.must_be_empty
 
       user = @harness.entity_factory.create(:user, :admin => true)
-      response = handle_oauth_procedure(response, user)
+      cookie, response = handle_oauth_procedure(response, user)
       response.status.must_equal 200
       response.body.must_equal "Secret - #{user.uuid}"
     end

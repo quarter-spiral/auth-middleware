@@ -3,6 +3,8 @@ require "auth/middleware/auth_tools"
 require "auth/middleware/qs_strategy"
 
 require 'auth-client'
+require 'uri'
+require 'cgi'
 
 module Auth
   class Middleware
@@ -10,9 +12,17 @@ module Auth
 
     def initialize(app, app_id, app_secret, cookie_name, &blck)
       handled_app = lambda do |env|
-        if env['PATH_INFO'] == "/auth/auth_backend/callback"
+        case env['PATH_INFO']
+        when "/auth/auth_backend/callback"
           response = Rack::Response.new('', 301, 'Location' => env['omniauth.origin'] || '/')
           response.set_cookie(@cookie_name, value: JSON.dump(env['omniauth.auth']), path: '/')
+          response
+        when "/auth/auth_backend/logout"
+          request = Rack::Request.new(env)
+          come_back_url = URI.join(request.url, '/').to_s
+
+          response = Rack::Response.new('', 302, 'Location' => "#{ENV['QS_AUTH_BACKEND_URL']}/signout?redirect_uri=#{CGI.escape(come_back_url)}")
+          response.set_cookie(@cookie_name, value: '', path: '/', expires: Time.new(1970))
           response
         else
           app.call(env)
